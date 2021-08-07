@@ -1,0 +1,9 @@
+name: sphinxjinjagenenv
+channels:
+- conda-forge
+dependencies:
+- python
+- pip
+- pbr
+- mypy
+- sphinx
