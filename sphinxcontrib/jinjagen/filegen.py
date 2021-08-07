@@ -145,6 +145,42 @@ def get_template_env(app: Sphinx) -> SandboxedEnvironment:
     return template_env
 
 
+# TODO get filepath from context instead??
+def update_gen_tree(gen_roots: FileGenRoots, run_data: FileGenRunData) -> None:
+
+    q: deque[Tuple[FileGenNode, GenKeyNode]] = deque()
+
+    for gen_key_root in run_data.run_def.gen_key_roots:
+        root_node = gen_roots.lookup_else_create_node(gen_key_root.key)
+        if gen_key_root.children:
+            for child_key_node in gen_key_root.children:
+                q.appendleft((root_node, child_key_node))
+        else:
+            root_node.run_entry_by_name[run_data.run_def.name] = FileGenRunEntry(
+                gen_key=gen_key_root.key
+                , run_data=run_data
+                , filepath=get_file_gen_run_entry_path(None, run_data.run_def, None))
+
+    while q:
+        e_file_node: FileGenNode
+        e_key_node: GenKeyNode
+        e_file_node, e_key_node = q.pop()
+
+        lookup_file_node = e_file_node.lookup_else_create_child(e_key_node.key)
+        if e_key_node.children:
+            for child_key_node in e_key_node.children:
+                q.appendleft((lookup_file_node, child_key_node))
+        else:
+            lookup_file_node.run_entry_by_name[run_data.run_def.name] = FileGenRunEntry(
+                gen_key=e_key_node.key
+                , run_data=run_data
+                , filepath=None)
+
+
+
+
+
+
 def gen_tree_from_runs(file_gen_runs: List[FileGenRunDef]) -> FileGenRoots:
     pass
 
