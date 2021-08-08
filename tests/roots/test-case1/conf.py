@@ -18,6 +18,12 @@ gen_key_tree_recipe: GenKeyNode = GenKeyNode("gen", [
 
 recipe_run = FileGenRunDef([gen_key_tree_recipe], 'recipe', 'recipe.jinja', 'rst')
 
-#gen_key_tree_recipe_source: GenKeyNode =
+gen_key_tree_recipe_source: GenKeyNode = GenKeyNode("gen", [
+    GenKeyNode('recipe_all_recipes', []),
+    GenKeyNode('recipe_youtube', []),
+    GenKeyNode('recipe_serious', [])
+])
 
-jinjagen_runs = [recipe_run]
+recipe_source_run = FileGenRunDef([gen_key_tree_recipe_source], 'recipe_source', 'recipe_source.jinja', 'rst')
+
+jinjagen_runs = [recipe_run, recipe_source_run]

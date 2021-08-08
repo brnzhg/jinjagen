@@ -1,2 +1,3 @@
 pbr
 sphinx
+docutils

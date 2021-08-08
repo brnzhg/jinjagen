@@ -230,6 +230,12 @@ def gen_from_run_defs(app: Sphinx, run_defs: List[FileGenRunDef]) -> FileGenRoot
 #    run has override base keys
 # so run can start at non base key, context never needs this i think, just purely needs keys, can have extra keys
 
+# note any node can look up a context is how it will work, may be name, may be no name
+
+# filepath options for name, key, etc
+# if only thing for key, allow it not to create dir
+# allow key to be appended to name
+# allow force no create dir, and error if conflict
 
 
     
