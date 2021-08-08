@@ -7,3 +7,5 @@ dependencies:
 - pbr
 - mypy
 - sphinx
+- pytest
+- autopep8
