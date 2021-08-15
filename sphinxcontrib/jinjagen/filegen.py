@@ -3,9 +3,8 @@ from typing import NewType, Protocol, Callable, TypeVar, Generic, Mapping, Any, 
 from typing import ForwardRef
 from typing import cast
 
-from collections import deque, defaultdict
+from collections import deque
 from pathlib import Path
-from traceback import format_exception
 
 from dataclasses import dataclass
 
@@ -181,7 +180,7 @@ def render_and_write_gen_node(
     gen_node: FileGenNode) -> None:
     for name, run_entry in gen_node.run_entry_by_name.items():
 
-        gen_node.children_by_gen_key
+        # gen_node.children_by_gen_key
 
         # try:
         name_ctxt = FileContext(gen_node, gen_roots, run_entry)
@@ -223,7 +222,7 @@ def gen_from_run_defs(app: Sphinx, run_defs: List[FileGenRunDef]) -> FileGenRoot
     return gen_roots
 
 # TODO
-# get version to work, fix test
+# get version to work
 # add back source directories for each run
 # make generic tree, rename key to be special key
 # create both context tree and run tree - runs easy lookup into context tree
@@ -237,6 +236,16 @@ def gen_from_run_defs(app: Sphinx, run_defs: List[FileGenRunDef]) -> FileGenRoot
 # allow key to be appended to name
 # allow force no create dir, and error if conflict
 
+# environment holds object with contract
+# contract can produce all the runs and stuff
+#   so db can be accessed there on build-init
+
+# TODO test toc
+
+# option to run without build init... and mark files as "generated"
+#   maybe just need command argument to not generate
+#   add prefix of sorts, allows generating mingle with not generated
+#   add parent template that displays generated time
 
     
 
