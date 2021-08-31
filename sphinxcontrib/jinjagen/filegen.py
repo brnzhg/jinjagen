@@ -5,6 +5,7 @@ from typing import cast
 
 from collections import deque
 from pathlib import Path
+from enum import Enum
 
 from dataclasses import dataclass
 
@@ -23,19 +24,42 @@ class GenKeyNode:
     key: str
     children: List[GenKeyNode]
 
+
+class FileGenRunNameOption(Enum):
+    ALL_KEYS_DIRS = 1,
+    ALWAYS_PREPEND_LAST_KEY = 2,
+    PREPEND_LAST_KEY_FOR_SINGLE_ENTRY = 3
+
+
 @dataclass
 class FileGenRunDef:
     gen_key_roots: List[GenKeyNode]
     name: str
     template_filepath: str
-    # output_dir: str
     suffix: str
+    name_option: FileGenRunNameOption
+    base_dir: Optional[str]
 
-    def entry_filepath_from_key_path(self, base_dir: str, from_root_keypath: Iterator[str]) -> Path:
-        return Path(base_dir, *from_root_keypath, f'{self.name}.{self.suffix}')
+    def entry_filepath_from_key_path(self, src_dir: str, from_root_keypath: List[str]) -> Path:
+        # return Path(base_dir, *from_root_keypath, f'{self.name}.{self.suffix}')
+        dirs_to_use: Iterable[str]
+        filename_to_use: str
+        if from_root_keypath and True:
+            dirs_to_use = from_root_keypath[:-1]
+            filename_to_use = f'{from_root_keypath[-1]}_{self.name}'
+        else:
+            dirs_to_use = from_root_keypath
+            filename_to_use = self.name
+
+        if self.base_dir:
+            return Path(src_dir, self.base_dir, *dirs_to_use, filename_to_use)
+        return Path(src_dir, *dirs_to_use, filename_to_use)
+
 
     def create_run_data(self, template_env: SandboxedEnvironment) -> FileGenRunData:
         return FileGenRunData(self, template_env.get_template(self.template_filepath))
+
+
 
 
 @dataclass
@@ -166,7 +190,8 @@ def update_gen_tree(src_dir: str, gen_roots: FileGenRoots, run_data: FileGenRunD
                 filepath=run_def.entry_filepath_from_key_path(src_dir,
                                                               lookup_file_node.from_root_keypath(include_self=True)))
 
-
+# TODO generate tree in two steps, first step mark everything out, second one create run entries with filepaths
+# maybe create the tree without any entries, just nodes. Then add entries after
 def gen_tree_from_runs(src_dir: str, runs: List[FileGenRunData]) -> FileGenRoots:
     gen_roots: FileGenRoots = FileGenRoots({})
 
