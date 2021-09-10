@@ -35,6 +35,7 @@ def setup(app: Sphinx) -> Dict[str, Any]:
 
     # test_runs = [jinjagen_run1]
     app.add_config_value("jinjagen_runs", [], "env")
+    app.add_config_value("jinjagen_contexts", {})
     app.connect('builder-inited', builder_inited)
 
     return {'version': __version__, 'parallel_read_safe': True}
