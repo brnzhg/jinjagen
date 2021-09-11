@@ -16,7 +16,7 @@ from sphinx.application import Sphinx
 from sphinx.util.logging import getLogger
 from sphinx.jinja2glue import BuiltinTemplateLoader
 
-from .node import StrKeyNodeBase, StrKeyNodeBaseP, StrKeyRootNodes, NodeFactory, NodeFactoryReqP, LookupElseCreateNode
+from .node import StrKeyNode, StrKeyNodeBase, StrKeyNodeBaseP, StrKeyRootNodes, NodeFactory, NodeFactoryReqP, LookupElseCreateNode
 
 logger = getLogger(__name__)
 
@@ -132,6 +132,59 @@ class FileGenRunEntry:
 
 
 @dataclass
+class FileGenBuilderNode(StrKeyNodeBaseP):
+    _key: str
+    _parent: Optional[FileGenBuilderNode]
+    _children: Dict[str, FileGenBuilderNode]
+    _runs: List[FileGenRunData]
+
+    @property
+    def key(self) -> str: return self._key
+
+    @property
+    def children(self) -> Dict[str, FileGenBuilderNode]: return self._children
+
+    @property
+    def parent(self) -> Optional[FileGenBuilderNode]: return self._parent
+
+    @property
+    def runs(self) -> List[FileGenRunData]:
+        return self._runs
+
+    # TODO replace src dir / base dir with base dir override, default is src dir
+    # should source dir be on builder itself?
+    # or maybe just totally omitted, who cares until the actual writer  
+    def gen_run_entries_by_name(self, src_dir: str) -> Dict[str, FileGenRunEntry]:
+        has_siblings: bool = len(self.runs) > 1
+        rs: Dict[str, FileGenRunEntry] = {}
+        for r in self.runs:
+            fgre: FileGenRunEntry = FileGenRunEntry(
+                gen_key=self.key, 
+                run_data=r, 
+                filepath=r.run_def.entry_filepath_from_key_path(has_siblings, 
+                    src_dir, 
+                    list(self.from_root_keypath(include_self=True))))
+            rs[r.run_def.name] = fgre
+        return rs
+        #lookup_file_node.run_entry_by_name[run_def.name] = FileGenRunEntry(
+        #    gen_key=elt.key_node.key,
+        #    run_data=run_data,
+        #    filepath=run_def.entry_filepath_from_key_path(True,
+        #                                                  src_dir,
+        #                                                  lookup_file_node.from_root_keypath(include_self=True)))
+
+    # def build_file_gen_node(self, src_dir: str) -> FileGenNode:
+    #    rs = self.gen_run_entries_by_name(src_dir)
+    #    return FileGenNode(self.key, self.p)
+
+
+
+@dataclass
+class FileGenBuilderRoots(StrKeyRootNodes[FileGenBuilderNode]):
+    pass
+
+
+@dataclass
 class FileContext:
     gen_node: FileGenNode
     gen_roots: FileGenRoots
@@ -167,37 +220,39 @@ def get_template_env(app: Sphinx) -> SandboxedEnvironment:
     return template_env
 
 
+class FileGenBuilderNodeFactory(NodeFactory[FileGenBuilderNode]):
+    def __call__(self, key:str, parent:Optional[FileGenBuilderNode]) -> FileGenBuilderNode:
+        return FileGenBuilderNode(key, parent, {}, [])
 
-def update_gen_tree(src_dir: str, gen_roots: FileGenRoots, run_data: FileGenRunData) -> None:
+
+def update_gen_tree(src_dir: str, gen_roots: FileGenBuilderRoots, run_data: FileGenRunData) -> None:
     @dataclass
     class UpdateGenTreeElt:
-        lookup_else_create_node: Callable[[str, NodeFactory[FileGenNode]], FileGenNode] # swap to interface
+        file_node_creator: LookupElseCreateNode[FileGenBuilderNode]
         key_node: GenKeyNode
-        parent_key_node: Optional[GenKeyNode]
 
-        def get_lookup_file_node(self, lookup_key: str) -> FileGenNode:
-            return self.lookup_else_create_node(lookup_key, lambda x, y: FileGenNode(x, y, {}, {}))
+        def get_file_node(self, lookup_key: str) -> FileGenBuilderNode:
+            return self.file_node_creator.lookup_else_create_node(lookup_key, FileGenBuilderNodeFactory())
 
     run_def: FileGenRunDef = run_data.run_def
     q: deque[UpdateGenTreeElt] = deque(UpdateGenTreeElt(
-        gen_roots.lookup_else_create_node, key_node, None) \
-            for key_node in run_def.gen_key_roots.roots.values())
+        gen_roots, key_node) for key_node in run_def.gen_key_roots.roots.values())
 
     while q:
         elt: UpdateGenTreeElt = q.pop()
 
-        lookup_file_node: FileGenNode = elt.get_lookup_file_node(elt.key_node.key)
+        lookup_file_node: FileGenBuilderNode = elt.get_file_node(elt.key_node.key)
         if elt.key_node.children:
             for child_key_node in elt.key_node.children.values():
-                q.appendleft(UpdateGenTreeElt(lookup_file_node.lookup_else_create_child,
-                                              child_key_node, elt.key_node))
+                q.appendleft(UpdateGenTreeElt(lookup_file_node, child_key_node))
         else:
-            lookup_file_node.run_entry_by_name[run_def.name] = FileGenRunEntry(
-                gen_key=elt.key_node.key,
-                run_data=run_data,
-                filepath=run_def.entry_filepath_from_key_path(True,
-                                                              src_dir,
-                                                              lookup_file_node.from_root_keypath(include_self=True)))
+            lookup_file_node.runs.append(run_data)
+            #lookup_file_node.run_entry_by_name[run_def.name] = FileGenRunEntry(
+            #    gen_key=elt.key_node.key,
+            #    run_data=run_data,
+            #    filepath=run_def.entry_filepath_from_key_path(True,
+            #                                                  src_dir,
+            #                                                  lookup_file_node.from_root_keypath(include_self=True)))
 
 
 
