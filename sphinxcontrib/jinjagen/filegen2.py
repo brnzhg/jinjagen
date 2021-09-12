@@ -16,7 +16,7 @@ from sphinx.application import Sphinx
 from sphinx.util.logging import getLogger
 from sphinx.jinja2glue import BuiltinTemplateLoader
 
-from .node import StrKeyNode, StrKeyNodeBase, StrKeyNodeBaseP, StrKeyRootNodes, NodeFactory, NodeFactoryReqP, LookupElseCreateNode
+from .node import StrKeyNodeBase, StrKeyNodeBaseP, StrKeyRootNodes, NodeFactory, NodeFactoryReqP, LookupElseCreateNode
 
 logger = getLogger(__name__)
 
@@ -56,11 +56,11 @@ class FileGenRunDef:
     template_filepath: str
     suffix: str
     name_option: FileGenRunNameOption
-    base_dir: Optional[str]
+    base_dir_override: Optional[str]
 
     def entry_filepath_from_key_path(self, 
         has_siblings: bool, 
-        src_dir: str, 
+        base_dir: str, 
         from_root_keypath: List[str]) -> Path:
         # return Path(base_dir, *from_root_keypath, f'{self.name}.{self.suffix}')
         dirs_to_use: Iterable[str]
@@ -75,9 +75,8 @@ class FileGenRunDef:
             dirs_to_use = from_root_keypath
             filename_to_use = self.name
 
-        if self.base_dir:
-            return Path(src_dir, self.base_dir, *dirs_to_use, filename_to_use)
-        return Path(src_dir, *dirs_to_use, filename_to_use)
+        base_dir_to_use = self.base_dir_override or base_dir
+        return Path(base_dir_to_use, *dirs_to_use, filename_to_use)
 
 
     def create_run_data(self, template_env: SandboxedEnvironment) -> FileGenRunData:
@@ -151,10 +150,7 @@ class FileGenBuilderNode(StrKeyNodeBaseP):
     def runs(self) -> List[FileGenRunData]:
         return self._runs
 
-    # TODO replace src dir / base dir with base dir override, default is src dir
-    # should source dir be on builder itself?
-    # or maybe just totally omitted, who cares until the actual writer  
-    def gen_run_entries_by_name(self, src_dir: str) -> Dict[str, FileGenRunEntry]:
+    def gen_run_entries_by_name(self, base_dir: str) -> Dict[str, FileGenRunEntry]:
         has_siblings: bool = len(self.runs) > 1
         rs: Dict[str, FileGenRunEntry] = {}
         for r in self.runs:
@@ -162,7 +158,7 @@ class FileGenBuilderNode(StrKeyNodeBaseP):
                 gen_key=self.key, 
                 run_data=r, 
                 filepath=r.run_def.entry_filepath_from_key_path(has_siblings, 
-                    src_dir, 
+                    base_dir, 
                     list(self.from_root_keypath(include_self=True))))
             rs[r.run_def.name] = fgre
         return rs
@@ -224,8 +220,17 @@ class FileGenBuilderNodeFactory(NodeFactory[FileGenBuilderNode]):
     def __call__(self, key:str, parent:Optional[FileGenBuilderNode]) -> FileGenBuilderNode:
         return FileGenBuilderNode(key, parent, {}, [])
 
+#TSrcNode = TypeVar('TSrcNode', bound=)
+#T
 
-def update_gen_tree(src_dir: str, gen_roots: FileGenBuilderRoots, run_data: FileGenRunData) -> None:
+#@dataclass
+#class TreeBuilderElt(Generic[StrKeyNode]):
+#    node_builder: 
+
+
+def update_gen_builder_tree(
+    gen_roots: FileGenBuilderRoots, 
+    run_data: FileGenRunData) -> None:
     @dataclass
     class UpdateGenTreeElt:
         file_node_creator: LookupElseCreateNode[FileGenBuilderNode]
@@ -259,11 +264,14 @@ def update_gen_tree(src_dir: str, gen_roots: FileGenBuilderRoots, run_data: File
 
 # TODO generate tree in two steps, first step mark everything out, second one create run entries with filepaths
 # maybe create the tree without any entries, just nodes. Then add entries after
-def gen_tree_from_runs(src_dir: str, runs: List[FileGenRunData]) -> FileGenRoots:
-    gen_roots: FileGenRoots = FileGenRoots({})
+def gen_tree_from_runs(base_dir: str, runs: List[FileGenRunData]) -> FileGenRoots:
+    gen_builder_roots: FileGenBuilderRoots = FileGenBuilderRoots({})
 
     for run_data in runs:
-        update_gen_tree(src_dir, gen_roots, run_data)
+        update_gen_builder_tree(gen_builder_roots, run_data)
+
+    
+
     return gen_roots
 
 
