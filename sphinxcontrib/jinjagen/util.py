@@ -18,7 +18,7 @@ class JinjaEnvFactory(Protocol):
     def build_env(self, app: Sphinx) -> SandboxedEnvironment:
         ...
 
-
+# TODO see autoapi for adding other directory to loader
 class BuiltinTemplateLoaderEnvFactory(JinjaEnvFactory):
 
     #TODO can take in 

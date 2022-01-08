@@ -46,13 +46,17 @@ class StrKeyNodeBase(LookupElseCreateNode[TNode], ABC):
     @property
     def lookup_nodes(self: TNode) -> Dict[str, TNode]: return self.children
 
+    def add_child(self: TNode, child_node: TNode) -> None:
+        self.children[child_node.key] = child_node
+
     def lookup_else_create_child(self: TNode,
                                  child_key: str,
                                  child_factory: NodeFactoryReqP[TNode]) -> TNode:
         if child_key in self.children:
             return self.children[child_key]
         new_child: TNode =  child_factory(child_key, self)
-        self.children[child_key] = new_child
+        # self.children[child_key] = new_child
+        self.add_child(new_child)
         return new_child
 
     def lookup_else_create_node(self: TNode,
@@ -91,13 +95,16 @@ class StrKeyRootNodes(LookupElseCreateNode[TNode]):
     def from_roots_iter(self, roots: Iterable[TNode]) -> StrKeyRootNodes:
         return StrKeyRootNodes({r.key: r for r in roots })
 
+    def add_node(self, new_node: TNode) -> None:
+        self.roots[new_node.key] = new_node
+
     def lookup_else_create_node(self, 
         node_key: str,
         node_factory: NodeFactory[TNode]) -> TNode:
         if node_key in self.roots:
             return self.roots[node_key]
         new_root: TNode = node_factory(node_key, None) 
-        self.roots[node_key] = new_root
+        self.add_node(new_root)
         return new_root
 
     def lookup_keypath_else_create(self,
@@ -114,87 +121,6 @@ class StrKeyRootNodes(LookupElseCreateNode[TNode]):
 class StrKeyRootNodesP(StrKeyRootNodes[TNodeP]):
     pass
    
-
-
-TNodeVal = TypeVar('TNodeVal')
-
-class NodeValFactory(Protocol[TNodeVal]):
-    def __call__(self, key: str,
-                 parent: Optional[StrKeyNode[TNodeVal]]) -> TNodeVal: ...
-
-
-# class StrNode(Generic[TNode], ABC):
-@dataclass
-class StrKeyNode(Generic[TNodeVal]):
-
-    key: str
-    node_val: TNodeVal
-    # parent: Optional[StrKeyNode[TNodeVal]]
-    children: Dict[str, StrKeyNode[TNodeVal]]
-
-    # abstractmethod
-
-    def lookup_else_create_child(self,
-                                 child_key: str,
-                                 child_val_factory: NodeValFactory[TNodeVal]) -> StrKeyNode[TNodeVal]:
-        if child_key in self.children:
-            return self.children[child_key]
-        new_child: StrKeyNode[TNodeVal] = StrKeyNode(child_key,
-                                                     child_val_factory(child_key, self), 
-                                                     # self, 
-                                                     {})
-        self.children[child_key] = new_child
-        return new_child
-
-    # def to_root_path(self, include_self: bool) -> Generator[StrKeyNode[TNodeVal], None, None]:
-    #    if include_self:
-    #         yield self
-    #    if self.parent:
-    #        yield from self.parent.to_root_path(True)
-
-    # def from_root_path(self, include_self: bool) -> Iterator[StrKeyNode[TNodeVal]]:
-    #    return reversed(list(self.to_root_path(include_self)))
-
-    # def from_root_keypath(self, include_self: bool):
-    #    return reversed(list(map(lambda x: x.key, self.to_root_path(include_self))))
-
-
-@dataclass
-class StrKeyRootNodesOld(Generic[TNodeVal]):
-    roots: Dict[str, StrKeyNode[TNodeVal]]
-
-    def lookup_else_create_node(self, root_key: str,
-                                root_val_factory: NodeValFactory[TNodeVal]) -> StrKeyNode[TNodeVal]:
-        if root_key in self.roots:
-            return self.roots[root_key]
-        new_root: StrKeyNode[TNodeVal] = StrKeyNode(
-            root_key, 
-            root_val_factory(root_key, None), 
-            # None, 
-            {})
-        self.roots[root_key] = new_root
-        return new_root
-
-    def lookup_keypath_else_create(self,
-                                   gen_keypath: List[str], node_factory: NodeValFactory[TNodeVal]) -> StrKeyNode[TNodeVal]:
-        curr_node: StrKeyNode[TNodeVal] = self.lookup_else_create_node(
-            gen_keypath[0], node_factory)
-        for gen_key in gen_keypath[1:]:
-            curr_node = curr_node.lookup_else_create_child(
-                gen_key, node_factory)
-        return curr_node
-
-
-@dataclass
-class NodeValP(Generic[TNodeVal]):
-    parent: StrKeyNodeP[TNodeVal]
-    node_val: TNodeVal
-
-
-@dataclass
-class StrKeyNodeP(StrKeyNode[NodeValP[TNodeVal]]):
-    pass
-
 
 # TSelf = TypeVar('TSelf')
 # TVal = TypeVar('TVal', covariant=True)

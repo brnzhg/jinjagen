@@ -11,12 +11,13 @@ from dataclasses import dataclass
 
 from jinja2 import Template
 from jinja2.sandbox import SandboxedEnvironment
-from sphinx.application import Sphinx
+# from sphinx.application import Sphinx
 # from sphinx.util.osutil import ensuredir
 from sphinx.util.logging import getLogger
 from sphinx.jinja2glue import BuiltinTemplateLoader
+from .util import JinjaEnvFactory
 
-from .node import StrKeyNodeBase, StrKeyNodeBaseP, StrKeyRootNodes, NodeFactory, NodeFactoryReqP, LookupElseCreateNode
+from .node import StrKeyNodeBase, StrKeyNodeBaseP, StrKeyRootNodes, NodeFactory, LookupElseCreateNode
 
 logger = getLogger(__name__)
 
@@ -81,7 +82,6 @@ class FileGenRunDef:
 
     def create_run_data(self, template_env: SandboxedEnvironment) -> FileGenRunData:
         return FileGenRunData(self, template_env.get_template(self.template_filepath))
-
 
 
 
@@ -169,9 +169,12 @@ class FileGenBuilderNode(StrKeyNodeBaseP):
         #                                                  src_dir,
         #                                                  lookup_file_node.from_root_keypath(include_self=True)))
 
-    # def build_file_gen_node(self, src_dir: str) -> FileGenNode:
-    #    rs = self.gen_run_entries_by_name(src_dir)
-    #    return FileGenNode(self.key, self.p)
+    def build_file_gen_node(self, 
+        base_dir: str, 
+        build_parent: Optional[FileGenNode], 
+        build_children: Dict[str, FileGenNode]) -> FileGenNode:
+        rs = self.gen_run_entries_by_name(base_dir)
+        return FileGenNode(self.key, build_parent, build_children, rs)
 
 
 
@@ -197,59 +200,61 @@ class FileContext:
         return self.gen_run_entry.run_data.template.render(self.get_render_kwargs())
 
 
-# copied from autoapi - https://github.com/carlos-jenkins/autoapi/blob/master/lib/autoapi/sphinx.py
-def get_template_env(app: Sphinx) -> SandboxedEnvironment:
-    """
-    Get the template environment.
-    .. note::
-       Template should be loaded as a package_data using
-       :py:function:`pkgutil.get_data`, but because we want the user to
-       override the default template we need to hook it to the Sphinx loader,
-       and thus a file system approach is required as it is implemented like
-       that.
-    """
-    #template_dir = [join(dirname(abspath(__file__)), 'templates')]
-    template_loader = BuiltinTemplateLoader()
-    template_loader.init(app.builder) # type: ignore
-    template_env = SandboxedEnvironment(loader=template_loader)
-    # template_env.filters['summary'] = filter_summary
-    return template_env
-
+class FileGenNodeFactory(NodeFactory[FileGenNode]):
+    def __call__(self, key:str, parent:Optional[FileGenNode]) -> FileGenNode:
+        return FileGenNode(key, parent, {}, {})
 
 class FileGenBuilderNodeFactory(NodeFactory[FileGenBuilderNode]):
     def __call__(self, key:str, parent:Optional[FileGenBuilderNode]) -> FileGenBuilderNode:
         return FileGenBuilderNode(key, parent, {}, [])
 
-#TSrcNode = TypeVar('TSrcNode', bound=)
-#T
-
-#@dataclass
-#class TreeBuilderElt(Generic[StrKeyNode]):
-#    node_builder: 
-
 
 def update_gen_builder_tree(
+    gen_roots: FileGenBuilderRoots,
+    run_data: FileGenRunData) -> None:
+    @dataclass
+    class GenBuilderTreeElt:
+        src_node: GenKeyNode
+        building_node: FileGenBuilderNode
+
+    node_factory: FileGenBuilderNodeFactory = FileGenBuilderNodeFactory()
+    q: deque[GenBuilderTreeElt] = \
+        deque(GenBuilderTreeElt(root_key_node, gen_roots.lookup_else_create_node(root_key_node.key, node_factory)) \
+            for root_key_node in run_data.run_def.gen_key_roots.roots.values())
+
+    while q:
+        elt: GenBuilderTreeElt = q.pop()
+
+        if elt.src_node.children:
+            for child_key_node in elt.src_node.children.values():
+                child_building_node: FileGenBuilderNode = elt.building_node.lookup_else_create_node(child_key_node.key, node_factory)
+                q.appendleft(GenBuilderTreeElt(child_key_node, child_building_node))
+        else:
+            elt.building_node.runs.append(run_data)
+
+
+def update_gen_builder_tree_old(
     gen_roots: FileGenBuilderRoots, 
     run_data: FileGenRunData) -> None:
     @dataclass
-    class UpdateGenTreeElt:
-        file_node_creator: LookupElseCreateNode[FileGenBuilderNode]
+    class UpdateGenBuilderTreeElt:
+        node_builder: LookupElseCreateNode[FileGenBuilderNode]
         key_node: GenKeyNode
 
-        def get_file_node(self, lookup_key: str) -> FileGenBuilderNode:
-            return self.file_node_creator.lookup_else_create_node(lookup_key, FileGenBuilderNodeFactory())
+        def build_node(self, lookup_key: str) -> FileGenBuilderNode:
+            return self.node_builder.lookup_else_create_node(lookup_key, FileGenBuilderNodeFactory())
 
     run_def: FileGenRunDef = run_data.run_def
-    q: deque[UpdateGenTreeElt] = deque(UpdateGenTreeElt(
+    q: deque[UpdateGenBuilderTreeElt] = deque(UpdateGenBuilderTreeElt(
         gen_roots, key_node) for key_node in run_def.gen_key_roots.roots.values())
 
     while q:
-        elt: UpdateGenTreeElt = q.pop()
+        elt: UpdateGenBuilderTreeElt = q.pop()
 
-        lookup_file_node: FileGenBuilderNode = elt.get_file_node(elt.key_node.key)
+        lookup_file_node: FileGenBuilderNode = elt.build_node(elt.key_node.key)
         if elt.key_node.children:
             for child_key_node in elt.key_node.children.values():
-                q.appendleft(UpdateGenTreeElt(lookup_file_node, child_key_node))
+                q.appendleft(UpdateGenBuilderTreeElt(lookup_file_node, child_key_node))
         else:
             lookup_file_node.runs.append(run_data)
             #lookup_file_node.run_entry_by_name[run_def.name] = FileGenRunEntry(
@@ -260,6 +265,32 @@ def update_gen_builder_tree(
             #                                                  lookup_file_node.from_root_keypath(include_self=True)))
 
 
+def build_tree(gen_builder_roots: FileGenBuilderRoots, base_dir: str) -> FileGenRoots:
+    @dataclass
+    class GenTreeElt:
+        src_node: FileGenBuilderNode
+        built_node: FileGenNode
+
+    gen_roots: FileGenRoots = FileGenRoots({})
+    q: deque[GenTreeElt] = deque()
+    # deque(GenTreeElt(root_src_node, root_src_node.build_file_gen_node(base_dir, None, {})) \
+    #        for root_src_node in gen_builder_roots.roots.values())
+
+    for root_src_node in gen_builder_roots.roots.values():
+        root_built_node: FileGenNode = root_src_node.build_file_gen_node(base_dir, None, {})
+        gen_roots.add_node(root_built_node)
+        q.appendleft(GenTreeElt(root_src_node, root_built_node))
+
+    while q:
+        elt: GenTreeElt = q.pop()
+
+        for child_src_node in elt.src_node.children.values():
+            child_built_node: FileGenNode = child_src_node.build_file_gen_node(base_dir, elt.built_node, {})
+            elt.built_node.add_child(child_built_node)
+
+            q.appendleft(GenTreeElt(child_src_node, child_built_node))
+
+    return gen_roots
 
 
 # TODO generate tree in two steps, first step mark everything out, second one create run entries with filepaths
@@ -270,9 +301,7 @@ def gen_tree_from_runs(base_dir: str, runs: List[FileGenRunData]) -> FileGenRoot
     for run_data in runs:
         update_gen_builder_tree(gen_builder_roots, run_data)
 
-    
-
-    return gen_roots
+    return build_tree(gen_builder_roots, base_dir) 
 
 
 def render_and_write_gen_node(
@@ -307,15 +336,19 @@ def render_and_write_gen_tree(gen_roots: FileGenRoots) -> None:
             q.appendleft(elmt_child)
 
 
-def gen_from_run_defs(app: Sphinx, run_defs: List[FileGenRunDef]) -> FileGenRoots:
-    template_env: SandboxedEnvironment = get_template_env(app)
+def gen_from_run_defs(template_env: SandboxedEnvironment,
+    run_defs: List[FileGenRunDef],
+    src_dir: str) -> FileGenRoots:
+    #get_template_env(app)
 
     # fetch run templates
     runs: List[FileGenRunData] = [run_def.create_run_data(template_env) for run_def in run_defs]
 
     # gen tree with output filepaths
-    assert app.env is not None
-    gen_roots: FileGenRoots = gen_tree_from_runs(str(app.env.srcdir), runs)
+    # assert app.env is not None
+    gen_roots: FileGenRoots = gen_tree_from_runs(src_dir, runs)
+
+    # str(app.env.srcdir)
 
     # render and write
     render_and_write_gen_tree(gen_roots)
